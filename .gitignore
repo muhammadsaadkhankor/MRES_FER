@@ -10,7 +10,7 @@ dist/
 .pytest_cache/
 runs/
 outputs/
-data/
+/data/
 *.pt
 *.pth
 *.ckpt
