@@ -1,0 +1,27 @@
+# Full pipeline with Eulerian motion magnification enabled on the frame stream.
+data:
+  train_manifest: data/train.json
+  val_manifest: data/val.json
+  root: data
+  num_frames: 24
+  image_size: 224
+  sampling: apex_centered
+  flow_cache_dir: data/flow_cache
+  flow_algorithm: tvl1
+
+model:
+  use_motion_magnification: true
+  use_gate: true
+
+magnification:
+  factor: 12.0
+  low_cut: 0.06
+  high_cut: 0.35
+  pyramid_levels: 3
+
+optim:
+  epochs: 40
+  batch_size: 4
+
+run:
+  output_dir: runs/magnified
