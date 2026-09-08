@@ -10,7 +10,7 @@ def uniform_indices(num_available: int, num_frames: int) -> list[int]:
     if num_available <= 0:
         raise ValueError("clip has no frames")
     positions = np.linspace(0, num_available - 1, num=num_frames)
-    return [int(round(p)) for p in positions]
+    return [int(i) for i in np.rint(positions).astype(int)]
 
 
 def apex_centered_indices(
@@ -39,4 +39,4 @@ def apex_centered_indices(
         start = max(lo, start - (end - hi))
         end = hi
     positions = np.linspace(start, end, num=num_frames)
-    return [int(round(p)) for p in positions]
+    return [int(i) for i in np.rint(positions).astype(int)]
