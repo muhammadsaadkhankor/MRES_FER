@@ -9,9 +9,12 @@ directory (and, in some distributions, a subject directory)::
 
     Micro_Expression/happiness/S03-01-002/1.jpg
     Micro_Expression/S03/happiness/S03-01-002/1.jpg   # equally accepted
+    Macro_Expression/S01/anger/S01-07-001.jpg         # macro samples can be single stills
 
-The scan therefore treats any directory holding image files as a clip and resolves the
-emotion from the nearest matching ancestor directory, so both layouts work unchanged.
+The scan therefore treats a directory holding image files as a clip, except when that
+directory is itself an emotion, in which case each image inside is one still clip. The
+emotion comes from the nearest matching ancestor directory, so all layouts work
+unchanged.
 
 Releases differ in which emotions they ship (some carry the micro-only ``repression``,
 some only the six emotions shared with the macro side), so the class vocabulary is read
@@ -179,12 +182,23 @@ def read_annotations(path: str | Path) -> dict[str, Annotation]:
     return table
 
 
-def _clip_directories(root: Path) -> list[Path]:
-    clips = [
-        path
-        for path in root.rglob("*")
-        if path.is_dir() and any(child.suffix.lower() in IMAGE_SUFFIXES for child in path.iterdir())
-    ]
+def _clip_paths(root: Path) -> list[Path]:
+    """Clips of a subset: a frame directory, or a single image for still macro samples.
+
+    A directory holding images is one clip unless the directory is itself an emotion
+    (``Macro_Expression/S01/anger/S01-07-001.jpg``), in which case each image is a clip.
+    """
+    clips: list[Path] = []
+    for path in root.rglob("*"):
+        if not path.is_dir():
+            continue
+        images = [child for child in path.iterdir() if child.suffix.lower() in IMAGE_SUFFIXES]
+        if not images:
+            continue
+        if normalise_emotion(path.name) in KNOWN_EMOTIONS:
+            clips.extend(images)
+        else:
+            clips.append(path)
     return sorted(clips)
 
 
@@ -199,7 +213,7 @@ def discover_emotions(
     subset_root = Path(root) / subset_dir
     if not subset_root.is_dir():
         raise FileNotFoundError(f"missing MMEW subset directory {subset_root}")
-    found = {normalise_emotion(clip.parent.name) for clip in _clip_directories(subset_root)}
+    found = {normalise_emotion(clip.parent.name) for clip in _clip_paths(subset_root)}
     unknown = found - KNOWN_EMOTIONS
     if unknown and not skip_unknown:
         raise ValueError(
@@ -220,10 +234,15 @@ def _emotion_for(clip: Path, root: Path, known: Iterable[str]) -> str | None:
     return None
 
 
+def _clip_name(clip: Path) -> str:
+    return clip.stem if clip.is_file() else clip.name
+
+
 def _subject_for(clip: Path, root: Path, fallback: str | None) -> str:
     """MMEW names clips ``PersonIndex-EmotionIndex-SampleIndex`` (e.g. ``S03-01-002``)."""
-    head = clip.name.split("-")[0].split("_")[0]
-    if head and head != clip.name:
+    name = _clip_name(clip)
+    head = name.split("-")[0].split("_")[0]
+    if head and head != name:
         return head
     if fallback:
         return fallback
@@ -260,7 +279,7 @@ def build_records(
     records: list[ClipRecord] = []
     unknown: set[str] = set()
 
-    for clip in _clip_directories(subset_root):
+    for clip in _clip_paths(subset_root):
         emotion = _emotion_for(clip, subset_root, maps[subset])
         if emotion is None:
             unknown.add(clip.parent.name)
@@ -270,14 +289,19 @@ def build_records(
             # e.g. micro-only "repression": keep the micro supervision, drop the macro one.
             macro_label = IGNORE_INDEX
 
-        annotation = table.get(clip.name, Annotation())
-        num_frames = sum(1 for p in clip.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
+        name = _clip_name(clip)
+        annotation = table.get(name, Annotation())
+        num_frames = (
+            1
+            if clip.is_file()
+            else sum(1 for p in clip.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
+        )
         onset, apex, offset = rebase_indices(
             annotation.onset, annotation.apex, annotation.offset, num_frames
         )
         records.append(
             ClipRecord(
-                clip_id=f"{subset}_{clip.name}",
+                clip_id=f"{subset}_{name}",
                 frames_dir=str(clip.relative_to(dataset_root)),
                 macro_label=macro_label,
                 micro_label=maps["micro"][emotion] if subset == "micro" else IGNORE_INDEX,

@@ -5,8 +5,9 @@ from pathlib import Path
 import numpy as np
 from torch import Tensor
 
+from conftest import write_mmew_still
 from mres_fer.config import Config
-from mres_fer.data.dataset import ClipDataset, build_dataloaders, read_manifest
+from mres_fer.data.dataset import ClipDataset, ClipRecord, build_dataloaders, read_manifest
 from mres_fer.data.optical_flow import FlowCache, compute_flow_sequence
 from mres_fer.data.transforms import ClipTransform
 
@@ -48,6 +49,21 @@ def test_dataset_item_shapes(tiny_config: Config) -> None:
     assert frames.shape == (tiny_config.data.num_frames, 3, size, size)
     assert flow.shape == (tiny_config.data.num_frames, 2, size, size)
     assert float(frames.max()) <= 1.0
+
+
+def test_still_image_clip_is_repeated_with_zero_flow(tiny_config: Config) -> None:
+    """MMEW macro samples are single images, so they only feed the appearance branch."""
+    still = Path(tiny_config.data.root) / "macro" / "S01-07-001.jpg"
+    write_mmew_still(still)
+    record = ClipRecord(
+        clip_id="macro_S01-07-001", frames_dir="macro/S01-07-001.jpg", macro_label=0
+    )
+
+    sample = ClipDataset([record], tiny_config.data, train=False)[0]
+    frames, flow = sample["frames"], sample["flow"]
+    assert isinstance(frames, Tensor) and isinstance(flow, Tensor)
+    assert frames.shape[0] == tiny_config.data.num_frames
+    assert float(flow.abs().max()) == 0.0
 
 
 def test_dataloaders_collate_clip_ids(tiny_config: Config) -> None:

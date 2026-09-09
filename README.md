@@ -64,15 +64,17 @@ face-aligned) frames:
 ```
 
 `frames_dir` is relative to `data.root` and holds frames with sortable names
-(`img_00001.jpg` ...). `micro_label` may be omitted for macro-only datasets: those clips
+(`img_00001.jpg` ...); it may also be a single image file, which is repeated across the
+clip with zero flow. `micro_label` may be omitted for macro-only datasets: those clips
 are ignored by the micro loss, so mixed corpora can be trained jointly. `subject` is
 carried through for leave-one-subject-out splits.
 
 ### MMEW
 
-`prepare-mmew` scans an MMEW release into a manifest. Both published layouts work
-(`<subset>/<emotion>/<clip>/1.jpg` and `<subset>/<subject>/<emotion>/<clip>/1.jpg`), and
-the subject is taken from the `PersonIndex-EmotionIndex-SampleIndex` clip name:
+`prepare-mmew` scans an MMEW release into a manifest. All published layouts work — frame
+directories with or without a subject level (`<subset>/[<subject>/]<emotion>/<clip>/1.jpg`)
+and single-image macro samples (`Macro_Expression/S01/anger/S01-07-001.jpg`) — and the
+subject is taken from the `PersonIndex-EmotionIndex-SampleIndex` clip name:
 
 ```bash
 mres-fer prepare-mmew --root /path/to/MMEW_Final --out data/mmew
@@ -88,6 +90,11 @@ micro-to-macro hypothesis testable on it:
   supervise both heads;
 - macro clips leave `micro_label` at the ignore index and only supervise the macro head;
 - `repression` exists only in the micro taxonomy, so those clips ignore the macro head.
+
+Where a macro sample is a single still, the frame is repeated across the clip and its flow
+is zero, so it trains the appearance branch only; the flow branch still learns from the
+micro clips. If you would rather not mix the two, `--micro-only` builds a micro-only
+manifest (the macro head is then supervised by the micro clips' emotion labels).
 
 Class indices are alphabetical and derived from the emotion directories present in *your*
 copy, since releases differ (some ship the micro-only `repression`, some only the six

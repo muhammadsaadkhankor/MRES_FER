@@ -60,8 +60,8 @@ def test_prepare_mmew_writes_manifest(
         "micro_S03-01-002",
         "micro_S05-07-001",
         "micro_S13-07-001",
-        "macro_S03-02-001",
-        "macro_S03-05-001",
+        "macro_S03-07-001",
+        "macro_S04-05-001",
     }
     assert records["micro_S03-01-002"]["apex"] == 3  # auto-detected annotations applied
     assert json.loads((out / "labels.json").read_text())["macro"]["anger"] == 0

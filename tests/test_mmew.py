@@ -78,13 +78,17 @@ def test_build_records_micro_only_class_ignores_macro_head(mmew_root: Path) -> N
     assert records["micro_S05-07-001"].macro_label == IGNORE_INDEX
 
 
-def test_build_records_macro_ignores_micro_head_and_nested_subject_dirs(mmew_root: Path) -> None:
+def test_build_records_macro_ignores_micro_head_and_reads_stills_as_clips(
+    mmew_root: Path,
+) -> None:
     maps = _maps(mmew_root)
     records = {r.clip_id: r for r in build_records(mmew_root, "Macro_Expression", "macro", maps)}
     assert {r.micro_label for r in records.values()} == {IGNORE_INDEX}
-    assert records["macro_S03-02-001"].macro_label == maps["macro"]["anger"]
-    nested = records["macro_S03-05-001"]
-    assert (nested.macro_label, nested.subject) == (maps["macro"]["happiness"], "S03")
+    still = records["macro_S03-07-001"]
+    assert still.frames_dir == "Macro_Expression/S03/anger/S03-07-001.jpg"
+    assert (still.macro_label, still.subject) == (maps["macro"]["anger"], "S03")
+    sequence = records["macro_S04-05-001"]
+    assert sequence.frames_dir == "Macro_Expression/S04/happiness/S04-05-001"
 
 
 def test_build_records_rejects_emotions_missing_from_the_maps(mmew_root: Path) -> None:

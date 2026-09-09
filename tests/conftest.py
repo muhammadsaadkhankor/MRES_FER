@@ -52,15 +52,21 @@ def write_mmew_clip(directory: Path, num_frames: int = 6) -> None:
         cv2.imwrite(str(directory / f"{i}.jpg"), frame)
 
 
+def write_mmew_still(path: Path) -> None:
+    """MMEW stores each macro sample as a single image inside the emotion directory."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(path), np.zeros((8, 8, 3), dtype=np.uint8))
+
+
 @pytest.fixture
 def mmew_root(tmp_path: Path) -> Path:
-    """Both directory layouts seen in MMEW releases: emotion/clip and subject/emotion/clip."""
+    """Every layout MMEW releases use: frame directories, subject nesting, macro stills."""
     root = tmp_path / "MMEW"
     write_mmew_clip(root / "Micro_Expression" / "happiness" / "S03-01-002")
     write_mmew_clip(root / "Micro_Expression" / "anger" / "S13-07-001")
     write_mmew_clip(root / "Micro_Expression" / "repression" / "S05-07-001")
-    write_mmew_clip(root / "Macro_Expression" / "anger" / "S03-02-001")
-    write_mmew_clip(root / "Macro_Expression" / "S03" / "happiness" / "S03-05-001")
+    write_mmew_still(root / "Macro_Expression" / "S03" / "anger" / "S03-07-001.jpg")
+    write_mmew_clip(root / "Macro_Expression" / "S04" / "happiness" / "S04-05-001")
     return root
 
 

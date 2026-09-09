@@ -14,8 +14,10 @@ A manifest is a JSON list of records, one per clip::
     ]
 
 ``frames_dir`` is relative to ``DataConfig.root`` and holds frames named in sortable
-order (``img_00001.jpg`` ...). ``micro_label`` may be omitted for datasets that only
-carry macro annotations; such clips are ignored by the micro loss.
+order (``img_00001.jpg`` ...). It may also point at a single image file, as MMEW does for
+its macro samples: the still is then repeated across the clip and its flow is zero, so
+such samples train the appearance branch only. ``micro_label`` may be omitted for
+datasets that only carry macro annotations; such clips are ignored by the micro loss.
 """
 
 from __future__ import annotations
@@ -117,6 +119,8 @@ class ClipDataset(Dataset[dict[str, Tensor | str]]):
 
     def _frame_paths(self, record: ClipRecord) -> list[Path]:
         directory = self.root / record.frames_dir
+        if directory.suffix.lower() in IMAGE_SUFFIXES:
+            return [directory]
         paths = sorted(
             (p for p in directory.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES),
             key=frame_order_key,
@@ -144,6 +148,8 @@ class ClipDataset(Dataset[dict[str, Tensor | str]]):
 
     def _flow_for(self, record: ClipRecord, frames: np.ndarray, indices: list[int]) -> np.ndarray:
         size = (frames.shape[1], frames.shape[2])
+        if len(set(indices)) == 1:  # still image: no motion to estimate
+            return np.zeros((frames.shape[0], *size, 2), dtype=np.float32)
         if self.flow_cache is not None:
             cached = self.flow_cache.load(record.clip_id, indices, size)
             if cached is not None:
