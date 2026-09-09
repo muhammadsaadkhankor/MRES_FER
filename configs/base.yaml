@@ -1,0 +1,57 @@
+data:
+  train_manifest: data/train.json
+  val_manifest: data/val.json
+  root: data
+  num_frames: 16
+  image_size: 224
+  sampling: uniform
+  flow_cache_dir: data/flow_cache
+  flow_algorithm: farneback
+  horizontal_flip: true
+  num_workers: 4
+
+model:
+  use_appearance: true
+  use_motion: true
+  use_motion_magnification: false
+  use_gate: true
+  appearance_backbone: vit_small_patch16_224
+  appearance_pretrained: true
+  freeze_appearance: false
+  motion_width: 64
+  fusion_dim: 384
+  temporal_layers: 2
+  temporal_heads: 6
+  dropout: 0.1
+  num_micro_classes: 5
+  num_macro_classes: 7
+  macro_from_micro: true
+
+magnification:
+  factor: 8.0
+  low_cut: 0.05
+  high_cut: 0.4
+  pyramid_levels: 3
+  attenuate_chrominance: true
+
+loss:
+  micro_weight: 1.0
+  macro_weight: 1.0
+  label_smoothing: 0.1
+
+optim:
+  epochs: 30
+  batch_size: 8
+  lr: 1.0e-4
+  backbone_lr: 1.0e-5
+  weight_decay: 0.05
+  warmup_epochs: 2
+  grad_clip: 1.0
+  amp: true
+
+run:
+  seed: 42
+  device: cuda
+  output_dir: runs/base
+  log_interval: 20
+  monitor: macro_uf1

@@ -1,0 +1,12 @@
+# Ablation 1/3 - baseline: no micro supervision at all, the macro head learns alone.
+# Whatever `mmew_transfer.yaml` gains over this run is what the micro clips contributed.
+extends: mmew.yaml
+
+loss:
+  micro_weight: 0.0
+
+model:
+  macro_from_micro: false
+
+run:
+  output_dir: runs/mmew_macro_only

@@ -1,0 +1,26 @@
+# Ablation: drop the ViT branch and classify from optical flow alone.
+data:
+  train_manifest: data/train.json
+  val_manifest: data/val.json
+  root: data
+  num_frames: 16
+  image_size: 224
+  sampling: apex_centered
+  flow_cache_dir: data/flow_cache
+  flow_algorithm: tvl1
+
+model:
+  use_appearance: false
+  use_motion: true
+  use_gate: false
+  fusion_dim: 384
+  temporal_layers: 2
+  temporal_heads: 6
+
+optim:
+  epochs: 40
+  batch_size: 16
+  lr: 3.0e-4
+
+run:
+  output_dir: runs/flow_only
