@@ -53,6 +53,35 @@ def test_loso_runs_one_fold_per_subject(
     assert (output_dir / "fold_s0" / "best.pt").exists()
 
 
+def test_loso_can_run_the_transfer_schedule_per_fold(
+    tiny_config: Config, tiny_dataset: Path, tmp_path: Path
+) -> None:
+    tiny_config.transfer.stage1_epochs = 1
+    tiny_config.transfer.stage2_epochs = 1
+    config_path = _config_file(tiny_config, tmp_path / "config.yaml")
+    output_dir = Path(tiny_config.run.output_dir)
+
+    exit_code = main(
+        [
+            "loso",
+            "--config",
+            str(config_path),
+            "--manifest",
+            str(tiny_dataset / "train.json"),
+            "--subject",
+            "s0",
+            "--transfer",
+            "--override",
+            "optim.batch_size=1",
+        ]
+    )
+
+    assert exit_code == 0
+    summary = json.loads((output_dir / "loso_summary.json").read_text())
+    assert "macro_uf1" in summary["folds"]["s0"]
+    assert (output_dir / "fold_s0" / "stage2_macro" / "best.pt").exists()
+
+
 def test_prepare_mmew_writes_manifest(
     tmp_path: Path, mmew_root: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -78,3 +107,8 @@ def test_prepare_mmew_writes_manifest(
     }
     assert records["micro_S03-01-002"]["apex"] == 3  # auto-detected annotations applied
     assert json.loads((out / "labels.json").read_text())["macro"]["anger"] == 0
+
+    train = json.loads((out / "train.json").read_text())
+    val = json.loads((out / "val.json").read_text())
+    assert len(train) + len(val) == len(records)
+    assert not {r["subject"] for r in train} & {r["subject"] for r in val}

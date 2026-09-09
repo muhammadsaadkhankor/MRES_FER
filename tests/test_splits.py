@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from mres_fer.data.dataset import ClipRecord
-from mres_fer.data.splits import group_by_subject, loso_folds
+from mres_fer.data.splits import group_by_subject, loso_folds, subject_holdout
 
 
 def _records() -> list[ClipRecord]:
@@ -38,6 +38,17 @@ def test_loso_folds_hold_out_one_subject_each() -> None:
 def test_loso_folds_can_be_restricted() -> None:
     folds = loso_folds(_records(), ["S02"])
     assert len(folds) == 1 and folds[0].subject == "S02"
+
+
+def test_subject_holdout_keeps_the_split_subject_disjoint() -> None:
+    train, val = subject_holdout(_records(), 0.34)
+    assert len(train) + len(val) == 4
+    assert val and not {r.subject for r in train} & {r.subject for r in val}
+
+
+def test_subject_holdout_rejects_a_degenerate_fraction() -> None:
+    with pytest.raises(ValueError, match="fraction"):
+        subject_holdout(_records(), 1.0)
 
 
 def test_loso_folds_reject_unknown_subject() -> None:

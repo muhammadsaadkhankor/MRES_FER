@@ -71,11 +71,20 @@ def _stage_config(
     )
 
 
-def run_transfer(config: Config) -> dict[str, dict[str, float]]:
-    """Run both stages and return their final metrics keyed by stage."""
+def run_transfer(
+    config: Config,
+    train_records: Sequence[ClipRecord] | None = None,
+    val_records: Sequence[ClipRecord] | None = None,
+) -> dict[str, dict[str, float]]:
+    """Run both stages and return their final metrics keyed by stage.
+
+    Records default to the configured manifests; LOSO passes its fold instead.
+    """
     ignore = config.loss.ignore_index
-    train_records = read_manifest(config.data.train_manifest)
-    val_records = read_manifest(config.data.val_manifest)
+    if train_records is None:
+        train_records = read_manifest(config.data.train_manifest)
+    if val_records is None:
+        val_records = read_manifest(config.data.val_manifest)
 
     model = build_model(config.model, config.data.image_size, config.magnification)
 

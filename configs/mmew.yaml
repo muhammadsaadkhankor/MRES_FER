@@ -3,8 +3,8 @@
 # also ships micro `repression` needs num_micro_classes: 7).
 # Micro clips are short and apex-annotated, so sampling stays centred on the apex.
 data:
-  train_manifest: data/mmew/manifest.json
-  val_manifest: data/mmew/manifest.json
+  train_manifest: data/mmew/train.json
+  val_manifest: data/mmew/val.json
   root: /home/ab3379/work/data/MMEW_Final
   num_frames: 16
   image_size: 224

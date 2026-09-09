@@ -18,7 +18,7 @@ from mres_fer.data.dataset import (
     read_manifest,
     write_manifest,
 )
-from mres_fer.data.splits import loso_folds
+from mres_fer.data.splits import loso_folds, subject_holdout
 from mres_fer.engine.trainer import Trainer, resolve_device
 from mres_fer.engine.transfer import run_transfer
 from mres_fer.models.mres_fer import build_model
@@ -116,16 +116,25 @@ def cmd_prepare_mmew(args: argparse.Namespace) -> int:
 
     out = Path(args.out)
     write_manifest(out / "manifest.json", records)
+    # Single runs need a subject-disjoint split; training and validating on the same
+    # manifest would only measure memorisation.
+    train_records, val_records = subject_holdout(records, args.val_fraction)
+    write_manifest(out / "train.json", train_records)
+    write_manifest(out / "val.json", val_records)
     (out / "labels.json").write_text(json.dumps(maps, indent=2))
     subjects = sorted({r.subject for r in records if r.subject is not None})
+    val_subjects = sorted({r.subject for r in val_records if r.subject is not None})
     print(
         json.dumps(
             {
                 "manifest": str(out / "manifest.json"),
+                "train_manifest": str(out / "train.json"),
+                "val_manifest": str(out / "val.json"),
                 "clips": len(records),
                 "micro_clips": micro_count,
                 "macro_clips": len(records) - micro_count,
                 "subjects": len(subjects),
+                "val_subjects": val_subjects,
                 "micro_annotations": str(micro_table) if micro_table else None,
                 "model.num_micro_classes": len(maps["micro"]),
                 "model.num_macro_classes": len(maps["macro"]),
@@ -147,6 +156,9 @@ def cmd_loso(args: argparse.Namespace) -> int:
     for fold in folds:
         fold_config = load_config(args.config, _parse_overrides(args.override))
         fold_config.run.output_dir = str(root / f"fold_{fold.subject}")
+        if args.transfer:
+            per_fold[fold.subject] = run_transfer(fold_config, fold.train, fold.val)["stage2_macro"]
+            continue
         train_loader, val_loader = build_dataloaders_from_records(
             fold_config.data,
             fold.train,
@@ -220,6 +232,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     prepare.add_argument("--micro-only", action="store_true", help="skip the macro subset")
     prepare.add_argument(
+        "--val-fraction",
+        type=float,
+        default=0.2,
+        help="share of subjects held out in val.json (default: 0.2)",
+    )
+    prepare.add_argument(
         "--skip-unknown", action="store_true", help="ignore unrecognised emotion directories"
     )
     prepare.set_defaults(func=cmd_prepare_mmew)
@@ -229,6 +247,11 @@ def build_parser() -> argparse.ArgumentParser:
     loso.add_argument("--manifest", type=Path, required=True, help="manifest holding all clips")
     loso.add_argument(
         "--subject", action="append", default=[], help="restrict to these held-out subjects"
+    )
+    loso.add_argument(
+        "--transfer",
+        action="store_true",
+        help="run the two-stage transfer schedule per fold and report its macro stage",
     )
     loso.set_defaults(func=cmd_loso)
     return parser

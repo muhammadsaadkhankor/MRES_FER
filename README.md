@@ -80,6 +80,11 @@ subject is taken from the `PersonIndex-EmotionIndex-SampleIndex` clip name:
 mres-fer prepare-mmew --root /path/to/MMEW_Final --out data/mmew
 ```
 
+It writes `manifest.json` (everything, for LOSO) plus `train.json` and `val.json`, a
+subject-disjoint split holding out every fifth subject (`--val-fraction`). Never point
+`train_manifest` and `val_manifest` at the same file: the model memorises clips it has
+seen, so shared-manifest scores reach 100% and mean nothing.
+
 The label table at the dataset root (`MMEW_Micro_Exp.xlsx`) is picked up automatically;
 `--micro-annotations`/`--macro-annotations` override the choice.
 
@@ -142,6 +147,13 @@ score is attributable to micro-derived features alone; `appearance` pins only th
 alive in stage 2 for clips that carry both labels. Each stage writes its own run directory
 (`stage1_micro/`, `stage2_macro/`) and the pair of final metrics lands in
 `run.output_dir/transfer_summary.json`.
+
+Under LOSO, `--transfer` runs the same two-stage schedule per fold and reports its macro
+stage, so all three ablations can be compared on one protocol:
+
+```bash
+mres-fer loso --config configs/mmew_transfer.yaml --manifest data/mmew/manifest.json --transfer
+```
 
 The three configs to compare are `mmew_macro_only.yaml` (baseline, no micro supervision),
 `mmew_joint.yaml` (multitask, macro head reads the micro posterior) and
