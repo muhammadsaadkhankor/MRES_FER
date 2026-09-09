@@ -1,0 +1,14 @@
+# Ablation 3/3 - micro-pretrained transfer: stage 1 learns the representation from the
+# micro clips only, stage 2 fits the macro head on top of it. Run with `mres-fer transfer`.
+# With freeze: encoder the macro head is the only thing that moves in stage 2, so its
+# macro score is attributable to the micro-derived features alone.
+extends: mmew.yaml
+
+transfer:
+  stage1_epochs: 30
+  stage2_epochs: 20
+  freeze: encoder
+  keep_micro_loss: false
+
+run:
+  output_dir: runs/mmew_transfer

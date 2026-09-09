@@ -7,12 +7,25 @@ import pytest
 import yaml
 
 from mres_fer.cli import main
-from mres_fer.config import Config
+from mres_fer.config import Config, load_config
 
 
 def _config_file(config: Config, path: Path) -> Path:
     path.write_text(yaml.safe_dump(config.to_dict()))
     return path
+
+
+@pytest.mark.parametrize(
+    "name", ["base", "flow_only", "magnified", "mmew", "mmew_joint", "mmew_macro_only"]
+)
+def test_shipped_configs_load(name: str) -> None:
+    load_config(Path(__file__).parents[1] / "configs" / f"{name}.yaml")
+
+
+def test_transfer_config_sets_the_two_stage_schedule() -> None:
+    config = load_config(Path(__file__).parents[1] / "configs" / "mmew_transfer.yaml")
+    assert config.transfer.freeze == "encoder"
+    assert config.data.sampling == "apex_centered"  # inherited from configs/mmew.yaml
 
 
 def test_loso_runs_one_fold_per_subject(

@@ -20,6 +20,7 @@ from mres_fer.data.dataset import (
 )
 from mres_fer.data.splits import loso_folds
 from mres_fer.engine.trainer import Trainer, resolve_device
+from mres_fer.engine.transfer import run_transfer
 from mres_fer.models.mres_fer import build_model
 
 
@@ -40,6 +41,13 @@ def cmd_train(args: argparse.Namespace) -> int:
     )
     metrics = Trainer(config, train_loader, val_loader).fit()
     print(json.dumps(metrics, indent=2))
+    return 0
+
+
+def cmd_transfer(args: argparse.Namespace) -> int:
+    """Pretrain on the micro clips, then fit the macro head on the macro clips."""
+    config = load_config(args.config, _parse_overrides(args.override))
+    print(json.dumps(run_transfer(config), indent=2))
     return 0
 
 
@@ -179,6 +187,12 @@ def build_parser() -> argparse.ArgumentParser:
     train = subparsers.add_parser("train", help="train the model")
     add_common(train)
     train.set_defaults(func=cmd_train)
+
+    transfer = subparsers.add_parser(
+        "transfer", help="two-stage micro pretraining then macro fine-tuning"
+    )
+    add_common(transfer)
+    transfer.set_defaults(func=cmd_transfer)
 
     evaluate = subparsers.add_parser("evaluate", help="evaluate a checkpoint")
     add_common(evaluate)

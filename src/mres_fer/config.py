@@ -78,6 +78,21 @@ class OptimConfig:
 
 
 @dataclass
+class TransferConfig:
+    """Two-stage schedule: pretrain on micro clips, then fine-tune the macro head.
+
+    ``freeze`` decides how much of the micro-pretrained representation stage 2 may move:
+    ``encoder`` keeps everything up to the temporal transformer fixed (features are purely
+    micro-derived), ``appearance`` only pins the ViT, ``none`` fine-tunes everything.
+    """
+
+    stage1_epochs: int = 20
+    stage2_epochs: int = 20
+    freeze: str = "encoder"  # encoder | appearance | none
+    keep_micro_loss: bool = False  # keep micro supervision alive during stage 2
+
+
+@dataclass
 class RunConfig:
     seed: int = 42
     device: str = "cuda"
@@ -93,6 +108,7 @@ class Config:
     magnification: MagnificationConfig = field(default_factory=MagnificationConfig)
     loss: LossConfig = field(default_factory=LossConfig)
     optim: OptimConfig = field(default_factory=OptimConfig)
+    transfer: TransferConfig = field(default_factory=TransferConfig)
     run: RunConfig = field(default_factory=RunConfig)
 
     def to_dict(self) -> dict[str, Any]:
@@ -105,6 +121,7 @@ SECTIONS: dict[str, type] = {
     "magnification": MagnificationConfig,
     "loss": LossConfig,
     "optim": OptimConfig,
+    "transfer": TransferConfig,
     "run": RunConfig,
 }
 
@@ -117,9 +134,25 @@ def _build(cls: type, values: dict[str, Any]) -> Any:
     return cls(**values)
 
 
+def _load_raw(path: Path) -> dict[str, Any]:
+    """Read a YAML config, resolving an optional ``extends: other.yaml`` base file.
+
+    Ablation configs are one section apart from their baseline, so they inherit rather
+    than restate it; the child's sections are merged key by key over the parent's.
+    """
+    raw = yaml.safe_load(path.read_text()) or {}
+    base_path = raw.pop("extends", None)
+    if base_path is None:
+        return dict(raw)
+    merged = _load_raw(path.parent / base_path)
+    for section, values in raw.items():
+        merged[section] = {**merged.get(section, {}), **values}
+    return merged
+
+
 def load_config(path: str | Path, overrides: dict[str, Any] | None = None) -> Config:
     """Read a YAML config, merging an optional flat ``a.b=c`` override mapping."""
-    raw = yaml.safe_load(Path(path).read_text()) or {}
+    raw = _load_raw(Path(path))
     for dotted, value in (overrides or {}).items():
         node = raw
         *parents, leaf = dotted.split(".")

@@ -11,8 +11,8 @@ from mres_fer.models.mres_fer import ModelOutput
 class MicroMacroLoss(nn.Module):
     """Weighted sum of the two cross entropies.
 
-    Clips without a micro annotation carry ``ignore_index`` and contribute nothing to
-    the micro term, which lets macro-only datasets be mixed in.
+    Clips without a micro (or macro) annotation carry ``ignore_index`` and contribute
+    nothing to that term, which lets mixed corpora and single-task stages share the loss.
     """
 
     def __init__(self, config: LossConfig) -> None:
@@ -28,11 +28,16 @@ class MicroMacroLoss(nn.Module):
     def forward(
         self, output: ModelOutput, micro_labels: Tensor, macro_labels: Tensor
     ) -> dict[str, Tensor]:
-        macro_loss = self.macro_criterion(output.macro_logits, macro_labels)
-        has_micro = (micro_labels != self.config.ignore_index).any()
-        if has_micro:
-            micro_loss = self.micro_criterion(output.micro_logits, micro_labels)
-        else:
-            micro_loss = macro_loss.new_zeros(())
+        zero = output.macro_logits.new_zeros(())
+        macro_loss = (
+            self.macro_criterion(output.macro_logits, macro_labels)
+            if (macro_labels != self.config.ignore_index).any()
+            else zero
+        )
+        micro_loss = (
+            self.micro_criterion(output.micro_logits, micro_labels)
+            if (micro_labels != self.config.ignore_index).any()
+            else zero
+        )
         total = self.config.macro_weight * macro_loss + self.config.micro_weight * micro_loss
         return {"loss": total, "macro_loss": macro_loss, "micro_loss": micro_loss}

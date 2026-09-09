@@ -1,0 +1,13 @@
+# Ablation 2/3 - joint multitask: both heads trained together, the macro head reading the
+# micro posterior. Run with `mres-fer train`.
+extends: mmew.yaml
+
+loss:
+  micro_weight: 1.0
+  macro_weight: 1.0
+
+model:
+  macro_from_micro: true
+
+run:
+  output_dir: runs/mmew_joint

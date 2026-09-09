@@ -124,6 +124,31 @@ mres-fer evaluate --config configs/base.yaml --checkpoint runs/base/best.pt
 `--override section.key=value` is repeatable and parsed as YAML, e.g.
 `--override optim.batch_size=4 --override model.use_gate=false`.
 
+### Micro-to-macro transfer
+
+`mres-fer train` learns both heads at once. `mres-fer transfer` instead runs the two-stage
+schedule the hypothesis calls for — stage 1 trains the encoder and the micro head on the
+micro-annotated clips only, stage 2 reloads the best micro checkpoint and fits the macro
+head on the macro clips:
+
+```bash
+mres-fer transfer --config configs/mmew_transfer.yaml
+```
+
+`transfer.freeze` decides how much of the micro-pretrained representation stage 2 may
+move: `encoder` (default) leaves the macro head as the only trainable module, so the macro
+score is attributable to micro-derived features alone; `appearance` pins only the ViT;
+`none` fine-tunes everything. `transfer.keep_micro_loss: true` keeps micro supervision
+alive in stage 2 for clips that carry both labels. Each stage writes its own run directory
+(`stage1_micro/`, `stage2_macro/`) and the pair of final metrics lands in
+`run.output_dir/transfer_summary.json`.
+
+The three configs to compare are `mmew_macro_only.yaml` (baseline, no micro supervision),
+`mmew_joint.yaml` (multitask, macro head reads the micro posterior) and
+`mmew_transfer.yaml` (micro pretraining). The first two run with `mres-fer train`, the
+last with `mres-fer transfer`; the gap between the first and the other two is what the
+micro clips buy you.
+
 Leave-one-subject-out is the standard protocol for micro-expression benchmarks; it takes
 a single manifest and trains one model per held-out subject:
 
@@ -145,6 +170,11 @@ the MEGC-style metrics that ignore the heavy class imbalance of micro-expression
 - `configs/magnified.yaml` — full pipeline with Eulerian magnification
 - `configs/flow_only.yaml` — ablation without the ViT branch
 - `configs/mmew.yaml` — MMEW class counts, apex-centred sampling, LOSO output layout
+- `configs/mmew_macro_only.yaml`, `configs/mmew_joint.yaml`, `configs/mmew_transfer.yaml` —
+  the three micro-to-macro ablations
+
+A config may start with `extends: other.yaml` to inherit a baseline and restate only the
+sections it changes, which is how the ablation configs stay a few lines long.
 
 ## Development
 
