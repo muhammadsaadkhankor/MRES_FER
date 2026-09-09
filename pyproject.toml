@@ -19,6 +19,7 @@ dependencies = [
     "pyyaml>=6.0",
     "tqdm>=4.66",
     "scikit-learn>=1.4",
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]

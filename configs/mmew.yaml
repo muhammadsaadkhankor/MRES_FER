@@ -1,0 +1,59 @@
+# MMEW: 7 micro classes (incl. repression) and 6 macro classes.
+# Micro clips are short and apex-annotated, so sampling stays centred on the apex.
+data:
+  train_manifest: data/mmew/manifest.json
+  val_manifest: data/mmew/manifest.json
+  root: /datasets/MMEW
+  num_frames: 16
+  image_size: 224
+  sampling: apex_centered
+  flow_cache_dir: data/mmew/flow_cache
+  flow_algorithm: farneback
+  horizontal_flip: true
+  num_workers: 4
+
+model:
+  use_appearance: true
+  use_motion: true
+  use_motion_magnification: false
+  use_gate: true
+  appearance_backbone: vit_small_patch16_224
+  appearance_pretrained: true
+  freeze_appearance: false
+  motion_width: 64
+  fusion_dim: 384
+  temporal_layers: 2
+  temporal_heads: 6
+  dropout: 0.1
+  num_micro_classes: 7
+  num_macro_classes: 6
+  macro_from_micro: true
+
+magnification:
+  factor: 8.0
+  low_cut: 0.05
+  high_cut: 0.4
+  pyramid_levels: 3
+  attenuate_chrominance: true
+
+loss:
+  micro_weight: 1.0
+  macro_weight: 1.0
+  label_smoothing: 0.1
+
+optim:
+  epochs: 30
+  batch_size: 8
+  lr: 1.0e-4
+  backbone_lr: 1.0e-5
+  weight_decay: 0.05
+  warmup_epochs: 2
+  grad_clip: 1.0
+  amp: true
+
+run:
+  seed: 42
+  device: cuda
+  output_dir: runs/mmew_loso
+  log_interval: 20
+  monitor: macro_uf1

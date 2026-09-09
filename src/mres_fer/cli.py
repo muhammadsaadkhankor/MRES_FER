@@ -11,7 +11,14 @@ import torch
 import yaml
 
 from mres_fer.config import load_config
-from mres_fer.data.dataset import build_dataloaders
+from mres_fer.data import mmew
+from mres_fer.data.dataset import (
+    build_dataloaders,
+    build_dataloaders_from_records,
+    read_manifest,
+    write_manifest,
+)
+from mres_fer.data.splits import loso_folds
 from mres_fer.engine.trainer import Trainer, resolve_device
 from mres_fer.models.mres_fer import build_model
 
@@ -69,6 +76,70 @@ def cmd_summary(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_prepare_mmew(args: argparse.Namespace) -> int:
+    """Scan an MMEW release into manifests (micro clips also carry their macro label)."""
+    records = mmew.build_records(
+        args.root, args.micro_dir, "micro", args.micro_annotations, args.skip_unknown
+    )
+    micro_count = len(records)
+    if not args.micro_only:
+        records += mmew.build_records(
+            args.root, args.macro_dir, "macro", args.macro_annotations, args.skip_unknown
+        )
+
+    out = Path(args.out)
+    write_manifest(out / "manifest.json", records)
+    (out / "labels.json").write_text(json.dumps(mmew.label_maps(), indent=2))
+    subjects = sorted({r.subject for r in records if r.subject is not None})
+    print(
+        json.dumps(
+            {
+                "manifest": str(out / "manifest.json"),
+                "clips": len(records),
+                "micro_clips": micro_count,
+                "macro_clips": len(records) - micro_count,
+                "subjects": len(subjects),
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+def cmd_loso(args: argparse.Namespace) -> int:
+    """Leave-one-subject-out cross-validation over a single manifest."""
+    config = load_config(args.config, _parse_overrides(args.override))
+    records = read_manifest(args.manifest)
+    folds = loso_folds(records, args.subject or None)
+    root = Path(config.run.output_dir)
+
+    per_fold: dict[str, dict[str, float]] = {}
+    for fold in folds:
+        fold_config = load_config(args.config, _parse_overrides(args.override))
+        fold_config.run.output_dir = str(root / f"fold_{fold.subject}")
+        train_loader, val_loader = build_dataloaders_from_records(
+            fold_config.data,
+            fold.train,
+            fold.val,
+            fold_config.optim.batch_size,
+            with_flow=fold_config.model.use_motion,
+        )
+        per_fold[fold.subject] = Trainer(fold_config, train_loader, val_loader).fit()
+
+    keys = sorted({key for metrics in per_fold.values() for key in metrics})
+    mean = {key: mean_of(per_fold, key) for key in keys}
+    summary = {"folds": per_fold, "mean": mean}
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "loso_summary.json").write_text(json.dumps(summary, indent=2))
+    print(json.dumps(summary, indent=2))
+    return 0
+
+
+def mean_of(per_fold: dict[str, dict[str, float]], key: str) -> float:
+    values = [metrics[key] for metrics in per_fold.values() if key in metrics]
+    return sum(values) / len(values) if values else float("nan")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mres-fer", description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -95,6 +166,27 @@ def build_parser() -> argparse.ArgumentParser:
     summary = subparsers.add_parser("summary", help="print model shapes and parameter counts")
     add_common(summary)
     summary.set_defaults(func=cmd_summary)
+
+    prepare = subparsers.add_parser("prepare-mmew", help="build manifests from an MMEW release")
+    prepare.add_argument("--root", type=Path, required=True, help="MMEW dataset root")
+    prepare.add_argument("--out", type=Path, required=True, help="directory for the manifests")
+    prepare.add_argument("--micro-dir", default="Micro_Expression")
+    prepare.add_argument("--macro-dir", default="Macro_Expression")
+    prepare.add_argument("--micro-annotations", type=Path, help="micro .xlsx/.csv label table")
+    prepare.add_argument("--macro-annotations", type=Path, help="macro .xlsx/.csv label table")
+    prepare.add_argument("--micro-only", action="store_true", help="skip the macro subset")
+    prepare.add_argument(
+        "--skip-unknown", action="store_true", help="ignore unrecognised emotion directories"
+    )
+    prepare.set_defaults(func=cmd_prepare_mmew)
+
+    loso = subparsers.add_parser("loso", help="leave-one-subject-out cross-validation")
+    add_common(loso)
+    loso.add_argument("--manifest", type=Path, required=True, help="manifest holding all clips")
+    loso.add_argument(
+        "--subject", action="append", default=[], help="restrict to these held-out subjects"
+    )
+    loso.set_defaults(func=cmd_loso)
     return parser
 
 

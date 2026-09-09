@@ -44,6 +44,24 @@ def tiny_dataset(tmp_path: Path) -> Path:
     return root
 
 
+def write_mmew_clip(directory: Path, num_frames: int = 6) -> None:
+    """MMEW stores frames as ``1.jpg``, ``2.jpg``, ... inside a per-clip directory."""
+    directory.mkdir(parents=True, exist_ok=True)
+    frame = np.zeros((8, 8, 3), dtype=np.uint8)
+    for i in range(1, num_frames + 1):
+        cv2.imwrite(str(directory / f"{i}.jpg"), frame)
+
+
+@pytest.fixture
+def mmew_root(tmp_path: Path) -> Path:
+    """Both directory layouts seen in MMEW releases: emotion/clip and subject/emotion/clip."""
+    root = tmp_path / "MMEW"
+    write_mmew_clip(root / "Micro_Expression" / "happiness" / "S03-01-002")
+    write_mmew_clip(root / "Micro_Expression" / "repression" / "S05-07-001")
+    write_mmew_clip(root / "Macro_Expression" / "S03" / "anger" / "S03-02-001")
+    return root
+
+
 @pytest.fixture
 def tiny_config(tiny_dataset: Path, tmp_path: Path) -> Config:
     return Config(

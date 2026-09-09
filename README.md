@@ -68,6 +68,31 @@ face-aligned) frames:
 are ignored by the micro loss, so mixed corpora can be trained jointly. `subject` is
 carried through for leave-one-subject-out splits.
 
+### MMEW
+
+`prepare-mmew` scans an MMEW release into a manifest. Both published layouts work
+(`<subset>/<emotion>/<clip>/1.jpg` and `<subset>/<subject>/<emotion>/<clip>/1.jpg`), and
+the subject is taken from the `PersonIndex-EmotionIndex-SampleIndex` clip name:
+
+```bash
+mres-fer prepare-mmew --root /datasets/MMEW --out data/mmew \
+  --micro-annotations /datasets/MMEW/micro.xlsx \
+  --macro-annotations /datasets/MMEW/macro.xlsx
+```
+
+MMEW records both expression types from the same subjects, which is what makes the
+micro-to-macro hypothesis testable on it:
+
+- micro clips get a micro label **and** the macro label of the same emotion, so they
+  supervise both heads;
+- macro clips leave `micro_label` at the ignore index and only supervise the macro head;
+- `repression` exists only in the micro taxonomy, so those clips ignore the macro head.
+
+Label indices are alphabetical (7 micro classes incl. `repression`, 6 macro classes) and
+written to `data/mmew/labels.json`. The onset/apex/offset columns of the spreadsheets
+are absolute recording frame numbers; they are rebased onto the trimmed clip directories
+and clamped, so `data.sampling: apex_centered` works directly.
+
 Optical flow is the slowest part of dataloading. Cache it once:
 
 ```bash
@@ -86,6 +111,17 @@ mres-fer evaluate --config configs/base.yaml --checkpoint runs/base/best.pt
 `--override section.key=value` is repeatable and parsed as YAML, e.g.
 `--override optim.batch_size=4 --override model.use_gate=false`.
 
+Leave-one-subject-out is the standard protocol for micro-expression benchmarks; it takes
+a single manifest and trains one model per held-out subject:
+
+```bash
+mres-fer loso --config configs/mmew.yaml --manifest data/mmew/manifest.json
+```
+
+Each fold writes to `run.output_dir/fold_<subject>/`, and per-fold plus mean metrics land
+in `run.output_dir/loso_summary.json`. `--subject S03` (repeatable) restricts the run to
+a few folds, which is the cheap way to sanity-check a config first.
+
 Runs write `config.json`, `train.log`, `metrics.jsonl`, `best.pt` and `last.pt` into
 `run.output_dir`. Validation reports accuracy, UF1 and UAR for both heads; UF1/UAR are
 the MEGC-style metrics that ignore the heavy class imbalance of micro-expression data.
@@ -95,6 +131,7 @@ the MEGC-style metrics that ignore the heavy class imbalance of micro-expression
 - `configs/base.yaml` — full pipeline, magnification off
 - `configs/magnified.yaml` — full pipeline with Eulerian magnification
 - `configs/flow_only.yaml` — ablation without the ViT branch
+- `configs/mmew.yaml` — MMEW class counts, apex-centred sampling, LOSO output layout
 
 ## Development
 
@@ -107,6 +144,8 @@ pytest -q
 ## Status
 
 The training and evaluation machinery is complete and covered by tests on synthetic
-clips. Dataset-specific pieces intentionally left out: face detection/alignment (do it
-offline, it depends on the corpus), manifest builders for CASME II / SAMM / DFEW, and
-leave-one-subject-out cross-validation driving.
+clips; MMEW manifest building and LOSO are covered on a synthetic copy of the MMEW
+directory layout, not on the real release. Face detection/alignment is intentionally out
+of scope — run it offline, it depends on the corpus and on the crop convention you want.
+Other corpora (CASME II, SAMM, DFEW) need their own manifest builder; the dataset and
+split code itself is corpus-agnostic.

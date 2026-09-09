@@ -21,7 +21,8 @@ carry macro annotations; such clips are ignored by the micro loss.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -65,9 +66,22 @@ class ClipRecord:
         )
 
 
+def frame_order_key(path: Path) -> tuple[int, str]:
+    """Natural order, so MMEW frames named ``2.jpg`` sort before ``10.jpg``."""
+    stem = path.stem
+    return (int(stem), "") if stem.isdigit() else (0, stem)
+
+
 def read_manifest(path: str | Path) -> list[ClipRecord]:
     raw = json.loads(Path(path).read_text())
     return [ClipRecord.from_dict(item) for item in raw]
+
+
+def write_manifest(path: str | Path, records: Sequence[ClipRecord]) -> Path:
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps([asdict(r) for r in records], indent=2))
+    return destination
 
 
 class ClipDataset(Dataset[dict[str, Tensor | str]]):
@@ -103,7 +117,10 @@ class ClipDataset(Dataset[dict[str, Tensor | str]]):
 
     def _frame_paths(self, record: ClipRecord) -> list[Path]:
         directory = self.root / record.frames_dir
-        paths = sorted(p for p in directory.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
+        paths = sorted(
+            (p for p in directory.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES),
+            key=frame_order_key,
+        )
         if not paths:
             raise FileNotFoundError(f"no frames found in {directory}")
         return paths
@@ -167,11 +184,15 @@ def collate_clips(batch: list[dict[str, Tensor | str]]) -> dict[str, Tensor | li
     return out
 
 
-def build_dataloaders(
-    config: DataConfig, batch_size: int, with_flow: bool = True
+def build_dataloaders_from_records(
+    config: DataConfig,
+    train_records: Sequence[ClipRecord],
+    val_records: Sequence[ClipRecord],
+    batch_size: int,
+    with_flow: bool = True,
 ) -> tuple[DataLoader[dict[str, Tensor | str]], DataLoader[dict[str, Tensor | str]]]:
-    train_set = ClipDataset(read_manifest(config.train_manifest), config, True, with_flow)
-    val_set = ClipDataset(read_manifest(config.val_manifest), config, False, with_flow)
+    train_set = ClipDataset(list(train_records), config, True, with_flow)
+    val_set = ClipDataset(list(val_records), config, False, with_flow)
     common = {
         "batch_size": batch_size,
         "num_workers": config.num_workers,
@@ -181,3 +202,15 @@ def build_dataloaders(
     train_loader = DataLoader(train_set, shuffle=True, drop_last=True, **common)  # type: ignore[arg-type]
     val_loader = DataLoader(val_set, shuffle=False, drop_last=False, **common)  # type: ignore[arg-type]
     return train_loader, val_loader
+
+
+def build_dataloaders(
+    config: DataConfig, batch_size: int, with_flow: bool = True
+) -> tuple[DataLoader[dict[str, Tensor | str]], DataLoader[dict[str, Tensor | str]]]:
+    return build_dataloaders_from_records(
+        config,
+        read_manifest(config.train_manifest),
+        read_manifest(config.val_manifest),
+        batch_size,
+        with_flow,
+    )
