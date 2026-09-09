@@ -74,6 +74,25 @@ def frame_order_key(path: Path) -> tuple[int, str]:
     return (int(stem), "") if stem.isdigit() else (0, stem)
 
 
+def is_still(root: str | Path, record: ClipRecord) -> bool:
+    """A record pointing at an image file rather than a frame directory."""
+    return (Path(root) / record.frames_dir).suffix.lower() in IMAGE_SUFFIXES
+
+
+def frame_paths(root: str | Path, record: ClipRecord) -> list[Path]:
+    """Frames of a clip in natural order, or the single image of a still record."""
+    directory = Path(root) / record.frames_dir
+    if directory.suffix.lower() in IMAGE_SUFFIXES:
+        return [directory]
+    paths = sorted(
+        (p for p in directory.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES),
+        key=frame_order_key,
+    )
+    if not paths:
+        raise FileNotFoundError(f"no frames found in {directory}")
+    return paths
+
+
 def read_manifest(path: str | Path) -> list[ClipRecord]:
     raw = json.loads(Path(path).read_text())
     return [ClipRecord.from_dict(item) for item in raw]
@@ -117,18 +136,6 @@ class ClipDataset(Dataset[dict[str, Tensor | str]]):
     def __len__(self) -> int:
         return len(self.records)
 
-    def _frame_paths(self, record: ClipRecord) -> list[Path]:
-        directory = self.root / record.frames_dir
-        if directory.suffix.lower() in IMAGE_SUFFIXES:
-            return [directory]
-        paths = sorted(
-            (p for p in directory.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES),
-            key=frame_order_key,
-        )
-        if not paths:
-            raise FileNotFoundError(f"no frames found in {directory}")
-        return paths
-
     def _select_indices(self, record: ClipRecord, num_available: int) -> list[int]:
         num_frames = self.config.num_frames
         if self.config.sampling == "apex_centered" and record.apex is not None:
@@ -161,7 +168,7 @@ class ClipDataset(Dataset[dict[str, Tensor | str]]):
 
     def __getitem__(self, index: int) -> dict[str, Tensor | str]:
         record = self.records[index]
-        paths = self._frame_paths(record)
+        paths = frame_paths(self.root, record)
         indices = self._select_indices(record, len(paths))
         frames = self._load_frames(paths, indices)
         flow = self._flow_for(record, frames, indices) if self.with_flow else None

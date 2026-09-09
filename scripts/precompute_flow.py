@@ -16,14 +16,9 @@ import numpy as np
 from tqdm import tqdm
 
 from mres_fer.config import load_config
-from mres_fer.data.dataset import IMAGE_SUFFIXES, ClipRecord, read_manifest
+from mres_fer.data.dataset import frame_paths, is_still, read_manifest
 from mres_fer.data.optical_flow import FlowCache, compute_flow_sequence
 from mres_fer.data.sampling import apex_centered_indices, uniform_indices
-
-
-def frame_paths(root: Path, record: ClipRecord) -> list[Path]:
-    directory = root / record.frames_dir
-    return sorted(p for p in directory.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
 
 
 def main() -> int:
@@ -43,9 +38,9 @@ def main() -> int:
     cache = FlowCache(config.flow_cache_dir, config.flow_algorithm)
 
     for record in tqdm(records, desc=f"flow[{args.split}]"):
+        if is_still(root, record):  # a single image has no motion to cache
+            continue
         paths = frame_paths(root, record)
-        if not paths:
-            raise FileNotFoundError(f"no frames in {root / record.frames_dir}")
         if config.sampling == "apex_centered" and record.apex is not None:
             indices = apex_centered_indices(
                 len(paths), config.num_frames, record.apex, record.onset, record.offset

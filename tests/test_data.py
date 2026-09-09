@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
+import yaml
 from torch import Tensor
 
 from conftest import write_mmew_still
 from mres_fer.config import Config
-from mres_fer.data.dataset import ClipDataset, ClipRecord, build_dataloaders, read_manifest
+from mres_fer.data.dataset import (
+    ClipDataset,
+    ClipRecord,
+    build_dataloaders,
+    read_manifest,
+    write_manifest,
+)
 from mres_fer.data.optical_flow import FlowCache, compute_flow_sequence
 from mres_fer.data.transforms import ClipTransform
 
@@ -64,6 +73,26 @@ def test_still_image_clip_is_repeated_with_zero_flow(tiny_config: Config) -> Non
     assert isinstance(frames, Tensor) and isinstance(flow, Tensor)
     assert frames.shape[0] == tiny_config.data.num_frames
     assert float(flow.abs().max()) == 0.0
+
+
+def test_precompute_flow_caches_clips_and_skips_stills(tiny_config: Config) -> None:
+    """The script must agree with the dataset: stills have no flow to cache."""
+    root = Path(tiny_config.data.root)
+    write_mmew_still(root / "macro" / "S01-07-001.jpg")
+    records = read_manifest(tiny_config.data.train_manifest)
+    records.append(
+        ClipRecord(clip_id="macro_S01-07-001", frames_dir="macro/S01-07-001.jpg", macro_label=0)
+    )
+    write_manifest(tiny_config.data.train_manifest, records)
+    config_path = Path(tiny_config.run.output_dir) / "config.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(yaml.safe_dump(tiny_config.to_dict()))
+
+    script = Path(__file__).parents[1] / "scripts" / "precompute_flow.py"
+    subprocess.run(
+        [sys.executable, str(script), "--config", str(config_path), "--split", "train"], check=True
+    )
+    assert list(Path(str(tiny_config.data.flow_cache_dir)).glob("*.npz"))
 
 
 def test_dataloaders_collate_clip_ids(tiny_config: Config) -> None:
