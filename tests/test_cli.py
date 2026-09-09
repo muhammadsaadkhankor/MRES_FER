@@ -44,16 +44,24 @@ def test_prepare_mmew_writes_manifest(
     tmp_path: Path, mmew_root: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     out = tmp_path / "manifests"
+    (mmew_root / "MMEW_Micro_Exp.csv").write_text(
+        "Subject,Filename,OnsetFrame,ApexFrame,OffsetFrame\nS03,S03-01-002,100,103,105\n"
+    )
     exit_code = main(["prepare-mmew", "--root", str(mmew_root), "--out", str(out)])
 
     assert exit_code == 0
     report = json.loads(capsys.readouterr().out)
-    assert report["micro_clips"] == 2
-    assert report["macro_clips"] == 1
-    records = json.loads((out / "manifest.json").read_text())
-    assert {r["clip_id"] for r in records} == {
+    assert (report["micro_clips"], report["macro_clips"]) == (3, 2)
+    assert (report["model.num_micro_classes"], report["model.num_macro_classes"]) == (3, 2)
+    assert report["micro_annotations"].endswith("MMEW_Micro_Exp.csv")
+
+    records = {r["clip_id"]: r for r in json.loads((out / "manifest.json").read_text())}
+    assert set(records) == {
         "micro_S03-01-002",
         "micro_S05-07-001",
+        "micro_S13-07-001",
         "macro_S03-02-001",
+        "macro_S03-05-001",
     }
+    assert records["micro_S03-01-002"]["apex"] == 3  # auto-detected annotations applied
     assert json.loads((out / "labels.json").read_text())["macro"]["anger"] == 0

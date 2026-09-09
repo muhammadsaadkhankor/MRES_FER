@@ -75,10 +75,11 @@ carried through for leave-one-subject-out splits.
 the subject is taken from the `PersonIndex-EmotionIndex-SampleIndex` clip name:
 
 ```bash
-mres-fer prepare-mmew --root /datasets/MMEW --out data/mmew \
-  --micro-annotations /datasets/MMEW/micro.xlsx \
-  --macro-annotations /datasets/MMEW/macro.xlsx
+mres-fer prepare-mmew --root /path/to/MMEW_Final --out data/mmew
 ```
+
+The label table at the dataset root (`MMEW_Micro_Exp.xlsx`) is picked up automatically;
+`--micro-annotations`/`--macro-annotations` override the choice.
 
 MMEW records both expression types from the same subjects, which is what makes the
 micro-to-macro hypothesis testable on it:
@@ -88,10 +89,15 @@ micro-to-macro hypothesis testable on it:
 - macro clips leave `micro_label` at the ignore index and only supervise the macro head;
 - `repression` exists only in the micro taxonomy, so those clips ignore the macro head.
 
-Label indices are alphabetical (7 micro classes incl. `repression`, 6 macro classes) and
-written to `data/mmew/labels.json`. The onset/apex/offset columns of the spreadsheets
-are absolute recording frame numbers; they are rebased onto the trimmed clip directories
-and clamped, so `data.sampling: apex_centered` works directly.
+Class indices are alphabetical and derived from the emotion directories present in *your*
+copy, since releases differ (some ship the micro-only `repression`, some only the six
+emotions shared with the macro side). They are written to `data/mmew/labels.json`, and
+the command prints the `model.num_micro_classes` / `model.num_macro_classes` your config
+needs.
+
+The onset/apex/offset columns of the spreadsheets are absolute recording frame numbers,
+while the clip directories are already trimmed, so indices are rebased onto the clip and
+clamped and `data.sampling: apex_centered` works directly.
 
 Optical flow is the slowest part of dataloading. Cache it once:
 

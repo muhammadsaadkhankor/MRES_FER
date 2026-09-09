@@ -76,20 +76,39 @@ def cmd_summary(args: argparse.Namespace) -> int:
     return 0
 
 
+def _find_annotations(root: Path, keyword: str) -> Path | None:
+    """MMEW ships its label table at the dataset root, e.g. ``MMEW_Micro_Exp.xlsx``."""
+    candidates = [
+        path
+        for path in sorted(root.glob("*"))
+        if path.suffix.lower() in {".xlsx", ".xlsm", ".csv"} and keyword in path.stem.lower()
+    ]
+    return candidates[0] if candidates else None
+
+
 def cmd_prepare_mmew(args: argparse.Namespace) -> int:
     """Scan an MMEW release into manifests (micro clips also carry their macro label)."""
+    root = Path(args.root)
+    micro_emotions = mmew.discover_emotions(root, args.micro_dir, args.skip_unknown)
+    macro_emotions = (
+        () if args.micro_only else mmew.discover_emotions(root, args.macro_dir, args.skip_unknown)
+    )
+    maps = mmew.label_maps(micro_emotions, macro_emotions)
+
+    micro_table = args.micro_annotations or _find_annotations(root, "micro")
     records = mmew.build_records(
-        args.root, args.micro_dir, "micro", args.micro_annotations, args.skip_unknown
+        root, args.micro_dir, "micro", maps, micro_table, args.skip_unknown
     )
     micro_count = len(records)
     if not args.micro_only:
+        macro_table = args.macro_annotations or _find_annotations(root, "macro")
         records += mmew.build_records(
-            args.root, args.macro_dir, "macro", args.macro_annotations, args.skip_unknown
+            root, args.macro_dir, "macro", maps, macro_table, args.skip_unknown
         )
 
     out = Path(args.out)
     write_manifest(out / "manifest.json", records)
-    (out / "labels.json").write_text(json.dumps(mmew.label_maps(), indent=2))
+    (out / "labels.json").write_text(json.dumps(maps, indent=2))
     subjects = sorted({r.subject for r in records if r.subject is not None})
     print(
         json.dumps(
@@ -99,6 +118,9 @@ def cmd_prepare_mmew(args: argparse.Namespace) -> int:
                 "micro_clips": micro_count,
                 "macro_clips": len(records) - micro_count,
                 "subjects": len(subjects),
+                "micro_annotations": str(micro_table) if micro_table else None,
+                "model.num_micro_classes": len(maps["micro"]),
+                "model.num_macro_classes": len(maps["macro"]),
             },
             indent=2,
         )
@@ -172,8 +194,16 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--out", type=Path, required=True, help="directory for the manifests")
     prepare.add_argument("--micro-dir", default="Micro_Expression")
     prepare.add_argument("--macro-dir", default="Macro_Expression")
-    prepare.add_argument("--micro-annotations", type=Path, help="micro .xlsx/.csv label table")
-    prepare.add_argument("--macro-annotations", type=Path, help="macro .xlsx/.csv label table")
+    prepare.add_argument(
+        "--micro-annotations",
+        type=Path,
+        help="micro .xlsx/.csv label table (default: auto-detected in --root)",
+    )
+    prepare.add_argument(
+        "--macro-annotations",
+        type=Path,
+        help="macro .xlsx/.csv label table (default: auto-detected in --root)",
+    )
     prepare.add_argument("--micro-only", action="store_true", help="skip the macro subset")
     prepare.add_argument(
         "--skip-unknown", action="store_true", help="ignore unrecognised emotion directories"

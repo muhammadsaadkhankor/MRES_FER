@@ -1,9 +1,11 @@
-# MMEW: 7 micro classes (incl. repression) and 6 macro classes.
+# MMEW. Class counts match a release with the six shared emotions on both sides; run
+# `mres-fer prepare-mmew`, which reports the counts of the copy on disk (a release that
+# also ships micro `repression` needs num_micro_classes: 7).
 # Micro clips are short and apex-annotated, so sampling stays centred on the apex.
 data:
   train_manifest: data/mmew/manifest.json
   val_manifest: data/mmew/manifest.json
-  root: /datasets/MMEW
+  root: /home/ab3379/work/data/MMEW_Final
   num_frames: 16
   image_size: 224
   sampling: apex_centered
@@ -25,7 +27,7 @@ model:
   temporal_layers: 2
   temporal_heads: 6
   dropout: 0.1
-  num_micro_classes: 7
+  num_micro_classes: 6
   num_macro_classes: 6
   macro_from_micro: true
 
