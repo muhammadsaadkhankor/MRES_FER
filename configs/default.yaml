@@ -90,11 +90,11 @@ train:
 
 # Used only by finetune.py (end-to-end training on the JPEG frames, backbone partly unfrozen).
 finetune:
-  epochs: 20
+  epochs: 45
   frames: 16                           # fewer than train.py: every frame goes through the ViT
   batch_size: 4
-  trainable_blocks: 4                  # last N ViT blocks (0 = frozen, 12 = whole backbone)
-  backbone_lr: 0.00001                 # much lower than the head lr
+  trainable_blocks: 6                  # last N ViT blocks (0 = frozen, 12 = whole backbone)
+  backbone_lr: 0.00002                 # much lower than the head lr
 
 split:
   mode: subject                        # subject | random  (subject = subject-independent)

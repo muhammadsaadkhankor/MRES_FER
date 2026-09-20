@@ -246,9 +246,13 @@ shapes, splits, checkpointing and IO are correct end to end.
 5. **Frozen features are the ceiling** — measured on MMEW (5-fold,
    subject-independent, chance 0.167): no micro branch 0.294 ± 0.038, micro tokens
    without contrastive 0.300 ± 0.041, full model 0.317 ± 0.028. The micro branch
-   helps in the predicted direction but every variant is capped around 0.30, and
-   regularisation changes nothing, which points at the frozen ImageNet ViT
-   features rather than the head. `finetune.py` (and `extractor.face_crop`) exist
-   to lift that ceiling.
-6. **Backbone** — any `timm` ViT name also works (`extractor.backbone`), e.g. a
+   helps in the predicted direction but every variant is capped around 0.30;
+   regularisation changes nothing (0.328 ± 0.057 unregularised) and face-cropped
+   features do not help either (0.328 ± 0.057), which points at the frozen
+   ImageNet ViT features rather than the head.
+6. **Fine-tuning lifts the ceiling** — `finetune.py` with the last 6 ViT blocks
+   unfrozen (backbone lr 2e-5, 45 epochs) reaches 0.444 accuracy / 0.402 macro-F1
+   on the held-out subjects, well above every frozen-feature variant. These are
+   now the defaults in `configs/default.yaml`.
+7. **Backbone** — any `timm` ViT name also works (`extractor.backbone`), e.g. a
    face-pretrained ViT would likely beat ImageNet weights.

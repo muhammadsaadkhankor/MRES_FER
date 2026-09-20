@@ -38,10 +38,12 @@ python cross_validate.py --config configs/default.yaml   # -> workdir/results/cr
 ```
 
 Frozen ImageNet features cap accuracy around 0.30 on MMEW; `finetune.py` trains the same
-model end to end with the last ViT blocks unfrozen (reads the JPEG frames, no extraction):
+model end to end with the last ViT blocks unfrozen (reads the JPEG frames, no extraction)
+and reaches 0.44 accuracy / 0.40 macro-F1 on the held-out subjects:
 
 ```bash
-python finetune.py --config configs/default.yaml
+python finetune.py --config configs/default.yaml            # default subject split
+python finetune.py --config configs/default.yaml --fold 0   # one cross-validation fold
 ```
 
 Smoke test without the dataset:
