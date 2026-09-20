@@ -10,7 +10,7 @@ paths:
   macro_dir: Macro_Expression          # <data_root>/Macro_Expression/<subject>/<emotion>/*.jpg
   micro_dir: Micro_Expression          # <data_root>/Micro_Expression/<emotion>/<clip>/*.jpg
   # Optional annotation sheet (csv or xlsx) with Subject/Filename/Onset/Apex/Offset columns.
-  micro_annotations: ""                # e.g. /home/ab3379/work/data/MMEW_Final/MMEW_Micro_Exp.xlsx
+  micro_annotations: /home/ab3379/work/data/MMEW_Final/MMEW_Micro_Exp.xlsx
   macro_annotations: ""                # optional, same idea for macro clips
 
   # Everything the pipeline produces lives under work_root (created by setup_dirs.py)
