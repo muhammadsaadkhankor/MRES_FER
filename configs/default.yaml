@@ -1,0 +1,85 @@
+# ---------------------------------------------------------------------------
+# MRES-FER: micro-expression guided macro-expression recognition (MMEW)
+# Every script reads this file. Override any value from the CLI, e.g.
+#   python train.py --config configs/default.yaml --set train.epochs=50
+# ---------------------------------------------------------------------------
+
+paths:
+  # Root of the MMEW_Final dataset (contains Macro_Expression/ and Micro_Expression/)
+  data_root: /home/ab3379/work/data/MMEW_Final
+  macro_dir: Macro_Expression          # <data_root>/Macro_Expression/<subject>/<emotion>/*.jpg
+  micro_dir: Micro_Expression          # <data_root>/Micro_Expression/<emotion>/<clip>/*.jpg
+  # Optional annotation sheet (csv or xlsx) with Subject/Filename/Onset/Apex/Offset columns.
+  micro_annotations: ""                # e.g. /home/ab3379/work/data/MMEW_Final/MMEW_Micro_Exp.xlsx
+  macro_annotations: ""                # optional, same idea for macro clips
+
+  # Everything the pipeline produces lives under work_root (created by setup_dirs.py)
+  work_root: ./workdir
+  features_dir: features               # <work_root>/features/{macro,micro}/*.npy
+  manifests_dir: manifests             # <work_root>/manifests/{macro,micro}_index.csv
+  checkpoints_dir: checkpoints
+  results_dir: results
+  figures_dir: figures
+  logs_dir: logs
+
+labels:
+  # Macro classes used by the classifier (folder names under Macro_Expression/<subject>/)
+  macro_classes: [anger, disgust, fear, happiness, sadness, surprise]
+  # Micro folders that should be ignored by the micro branch ("others" is noisy in MMEW)
+  micro_ignore: [others]
+
+extractor:
+  backbone: vit_b_16                   # torchvision ViT; also accepts a timm name if timm is installed
+  weights: IMAGENET1K_V1               # torchvision weights enum, or "" for random init
+  image_size: 224
+  batch_size: 64
+  num_workers: 4
+  device: cuda                         # cuda | cpu
+  dtype: float16                       # storage dtype of the .npy feature files
+  face_crop: false                     # optional centre crop of the frame before resizing
+  face_crop_ratio: 0.9
+
+sampling:
+  macro_frames: 32                     # frames sampled (uniformly) from a full macro clip
+  window_size: 8                       # length of a short window, in frames
+  window_stride: 4                     # overlap = window_size - window_stride
+  max_windows: 8                       # windows kept per macro clip
+  micro_frames: 16                     # frames sampled from a micro clip (apex-centred if available)
+
+model:
+  feature_dim: 768                     # ViT-B/16 CLS dim (auto-checked against the manifest)
+  hidden_dim: 256
+  micro_dim: 256                       # dimension of a latent micro-clue
+  proj_dim: 128                        # contrastive projection head output
+  micro_layers: 2
+  micro_heads: 4
+  macro_layers: 4
+  macro_heads: 8
+  dropout: 0.1
+  motion_magnification: 2.0            # scales frame-to-frame differences inside the micro encoder
+  use_micro_tokens: true               # feed latent micro-clues into the macro encoder
+
+loss:
+  w_cls: 1.0                           # cross entropy on the macro label
+  w_contrastive: 0.5                   # InfoNCE over window views (macro windows + micro clips)
+  w_temporal: 0.1                      # temporal-consistency regulariser on consecutive clues
+  temperature: 0.07
+  label_smoothing: 0.05
+
+train:
+  epochs: 30
+  batch_size: 8
+  micro_batch_size: 8                  # micro clips mixed into every step for the contrastive loss
+  lr: 0.0003
+  weight_decay: 0.01
+  warmup_epochs: 2
+  grad_clip: 1.0
+  num_workers: 4
+  device: cuda
+  seed: 42
+  amp: true
+
+split:
+  mode: subject                        # subject | random  (subject = subject-independent)
+  val_ratio: 0.15
+  test_ratio: 0.20
