@@ -37,6 +37,13 @@ numbers you report, use subject-independent 5-fold cross-validation instead:
 python cross_validate.py --config configs/default.yaml   # -> workdir/results/cross_validation.json
 ```
 
+Frozen ImageNet features cap accuracy around 0.30 on MMEW; `finetune.py` trains the same
+model end to end with the last ViT blocks unfrozen (reads the JPEG frames, no extraction):
+
+```bash
+python finetune.py --config configs/default.yaml
+```
+
 Smoke test without the dataset:
 
 ```bash

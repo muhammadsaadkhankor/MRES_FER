@@ -144,6 +144,7 @@ setup_dirs.py                  step 0 — create the output directories
 feature_extractor.py           step 1 — frozen ViT features + manifests
 train.py                       step 2 — training, saves last.pt and best.pt
 cross_validate.py              optional — subject-independent k-fold, mean ± std
+finetune.py                    optional — end-to-end training, last ViT blocks unfrozen
 evaluation.py                  step 3 — metrics, predictions, confusion matrix
 visualize.py                   step 4 — figures
 src/mres_fer/config.py         YAML config + workspace paths
@@ -193,7 +194,11 @@ python evaluation.py --config configs/default.yaml --checkpoint workdir/checkpoi
 # 4) figures
 python visualize.py --config configs/default.yaml --checkpoint workdir/checkpoints/last.pt
 
-# 5) (recommended) subject-independent 5-fold cross-validation -> results/cross_validation.json
+# 5) optional — end-to-end fine-tuning of the last 4 ViT blocks (reads JPEG frames,
+#    uses the split in manifests/splits.json, or --fold i)
+python finetune.py --config configs/default.yaml
+
+# 6) (recommended) subject-independent 5-fold cross-validation -> results/cross_validation.json
 python cross_validate.py --config configs/default.yaml
 #    one fold only (checkpoints are suffixed _fold<i>):
 python train.py --config configs/default.yaml --fold 0
@@ -238,5 +243,12 @@ shapes, splits, checkpointing and IO are correct end to end.
    `--folds <number of subjects>`, just ~30× the compute.
 4. **Micro supervision** — currently unsupervised (dynamics only). A supervised
    contrastive variant using micro labels is an easy ablation.
-5. **Backbone** — any `timm` ViT name also works (`extractor.backbone`), e.g. a
+5. **Frozen features are the ceiling** — measured on MMEW (5-fold,
+   subject-independent, chance 0.167): no micro branch 0.294 ± 0.038, micro tokens
+   without contrastive 0.300 ± 0.041, full model 0.317 ± 0.028. The micro branch
+   helps in the predicted direction but every variant is capped around 0.30, and
+   regularisation changes nothing, which points at the frozen ImageNet ViT
+   features rather than the head. `finetune.py` (and `extractor.face_crop`) exist
+   to lift that ceiling.
+6. **Backbone** — any `timm` ViT name also works (`extractor.backbone`), e.g. a
    face-pretrained ViT would likely beat ImageNet weights.

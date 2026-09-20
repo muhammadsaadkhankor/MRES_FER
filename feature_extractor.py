@@ -34,8 +34,14 @@ class FrameDataset(Dataset):
 
         self.frames = frames
         steps = []
-        if crop:
-            steps.append(transforms.CenterCrop(int(image_size / max(crop_ratio, 1e-3))))
+        if crop:  # keep the central crop_ratio of the frame (the face), not a fixed pixel box
+            steps.append(
+                transforms.Lambda(
+                    lambda image: transforms.functional.center_crop(
+                        image, int(min(image.size) * crop_ratio)
+                    )
+                )
+            )
         steps += [
             transforms.Resize((image_size, image_size)),
             transforms.ToTensor(),
