@@ -251,8 +251,9 @@ shapes, splits, checkpointing and IO are correct end to end.
    features do not help either (0.328 ± 0.057), which points at the frozen
    ImageNet ViT features rather than the head.
 6. **Fine-tuning lifts the ceiling** — `finetune.py` with the last 6 ViT blocks
-   unfrozen (backbone lr 2e-5, 45 epochs) reaches 0.444 accuracy / 0.402 macro-F1
-   on the held-out subjects, well above every frozen-feature variant. These are
-   now the defaults in `configs/default.yaml`.
+   unfrozen (backbone lr 2e-5, 45 epochs) reaches 0.433 ± 0.028 accuracy /
+   0.388 ± 0.043 macro-F1 over the same five subject-independent folds, ~12 points
+   above every frozen-feature variant. These are now the defaults in
+   `configs/default.yaml`.
 7. **Backbone** — any `timm` ViT name also works (`extractor.backbone`), e.g. a
    face-pretrained ViT would likely beat ImageNet weights.
