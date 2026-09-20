@@ -107,6 +107,33 @@ with the training seed and partitioned into test (20 %) / val (15 %) / train, so
 no subject appears in two sets. The split is written to
 `workdir/manifests/splits.json` and reused by `evaluation.py` and `visualize.py`.
 
+With only 30 subjects a single 6-subject test split has a standard error of roughly
+±8 accuracy points, so `cross_validate.py` runs subject-independent k-fold
+(`split.num_folds`, default 5): every subject is tested exactly once and the report
+is a mean ± std. Those are the numbers to quote.
+
+### Regularisation (why the first real run overfitted)
+
+The first 30-epoch run on MMEW reached train accuracy 1.000 by epoch 17 while
+validation accuracy plateaued at 0.458 — 120 training clips are simply memorised.
+The defaults now include, applied to the training split only:
+
+| knob | default | effect |
+| --- | --- | --- |
+| `augment.temporal_crop` | 0.3 | samples the 32 frames from a random 70–100 % sub-segment |
+| `augment.feature_noise` | 0.05 | gaussian noise on the ViT features |
+| `augment.frame_dropout` | 0.1 | replaces random frames with the clip mean |
+| `augment.mixup_alpha` | 0.4 | mixes two clips and their labels in feature space |
+| `model.dropout` | 0.3 | up from 0.1 |
+| `model.macro_layers` | 2 | down from 4 (5.6M → fewer parameters) |
+| `train.weight_decay` | 0.05 | up from 0.01 |
+| `loss.label_smoothing` | 0.1 | up from 0.05 |
+| `train.early_stopping_patience` | 15 | stops once validation stops improving |
+
+Note that with mixup the reported *train* accuracy is measured on mixed inputs
+against the original labels, so it is pessimistic by design and should no longer
+reach 1.000.
+
 ---
 
 ## 4. Repository layout
@@ -116,6 +143,7 @@ configs/default.yaml           all knobs (paths, sampling, model, losses, traini
 setup_dirs.py                  step 0 — create the output directories
 feature_extractor.py           step 1 — frozen ViT features + manifests
 train.py                       step 2 — training, saves last.pt and best.pt
+cross_validate.py              optional — subject-independent k-fold, mean ± std
 evaluation.py                  step 3 — metrics, predictions, confusion matrix
 visualize.py                   step 4 — figures
 src/mres_fer/config.py         YAML config + workspace paths
@@ -164,6 +192,11 @@ python evaluation.py --config configs/default.yaml --checkpoint workdir/checkpoi
 
 # 4) figures
 python visualize.py --config configs/default.yaml --checkpoint workdir/checkpoints/last.pt
+
+# 5) (recommended) subject-independent 5-fold cross-validation -> results/cross_validation.json
+python cross_validate.py --config configs/default.yaml
+#    one fold only (checkpoints are suffixed _fold<i>):
+python train.py --config configs/default.yaml --fold 0
 ```
 
 Any config value can be overridden without editing the YAML:
@@ -200,9 +233,9 @@ shapes, splits, checkpointing and IO are correct end to end.
 2. **Macro clip grouping** — confirm whether one macro emotion folder per
    subject is a single recording or several; the prefix grouping handles both,
    but the real number of clips should be sanity-checked against the macro CSV.
-3. **Evaluation protocol** — a single subject-independent split is implemented;
-   LOSO cross-validation is the usual MMEW protocol and would be a small loop
-   around `train.py`.
+3. **Evaluation protocol** — subject-independent k-fold is implemented
+   (`cross_validate.py`); full LOSO is the same loop with
+   `--folds <number of subjects>`, just ~30× the compute.
 4. **Micro supervision** — currently unsupervised (dynamics only). A supervised
    contrastive variant using micro labels is an easy ablation.
 5. **Backbone** — any `timm` ViT name also works (`extractor.backbone`), e.g. a

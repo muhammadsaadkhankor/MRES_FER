@@ -30,6 +30,13 @@ python visualize.py --config configs/default.yaml --checkpoint workdir/checkpoin
 
 Override any config value inline, e.g. `python train.py --set train.epochs=60 loss.w_contrastive=0`.
 
+MMEW is small (180 macro clips), so a single 6-subject test split is very noisy. For the
+numbers you report, use subject-independent 5-fold cross-validation instead:
+
+```bash
+python cross_validate.py --config configs/default.yaml   # -> workdir/results/cross_validation.json
+```
+
 Smoke test without the dataset:
 
 ```bash

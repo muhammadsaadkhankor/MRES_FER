@@ -85,6 +85,7 @@ class MacroClipDataset(Dataset):
         sampling: dict,
         subjects: list[str] | None = None,
         train: bool = False,
+        augment: dict | None = None,
     ) -> None:
         self.records = _records(Path(index_csv), class_to_idx)
         if subjects is not None:
@@ -92,6 +93,7 @@ class MacroClipDataset(Dataset):
             self.records = [r for r in self.records if r.subject in keep]
         self.sampling = sampling
         self.train = train
+        self.augment = augment or {}
 
     def __len__(self) -> int:
         return len(self.records)
@@ -99,14 +101,39 @@ class MacroClipDataset(Dataset):
     def _load(self, record: ClipRecord) -> np.ndarray:
         return np.load(record.feature_path).astype(np.float32)
 
+    def _temporal_crop(self, features: np.ndarray) -> np.ndarray:
+        """Random sub-segment of the clip, so its exact span cannot be memorised."""
+        ratio = float(self.augment.get("temporal_crop", 0.0))
+        length = features.shape[0]
+        if ratio <= 0 or length < 4:
+            return features
+        keep = max(4, int(length * (1.0 - np.random.uniform(0, ratio))))
+        start = np.random.randint(0, length - keep + 1)
+        return features[start : start + keep]
+
+    def _perturb(self, frames: np.ndarray) -> np.ndarray:
+        """Feature-space noise + frame dropout (dropped frames become the clip mean)."""
+        noise = float(self.augment.get("feature_noise", 0.0))
+        drop = float(self.augment.get("frame_dropout", 0.0))
+        if noise > 0:
+            frames = frames + np.random.normal(0, noise, frames.shape).astype(np.float32)
+        if drop > 0:
+            mask = np.random.rand(frames.shape[0]) < drop
+            if mask.any():
+                frames = frames.copy()
+                frames[mask] = frames.mean(axis=0)
+        return frames
+
     def __getitem__(self, index: int) -> dict:
         record = self.records[index]
         features = self._load(record)
+        if self.train:
+            features = self._temporal_crop(features)
         idx = uniform_indices(features.shape[0], self.sampling["macro_frames"])
         if self.train:  # jitter the uniform sampling grid a little
             jitter = np.random.randint(-1, 2, size=idx.shape)
             idx = np.clip(idx + jitter, 0, features.shape[0] - 1)
-        frames = features[idx]
+        frames = self._perturb(features[idx]) if self.train else features[idx]
         windows = make_windows(
             features,
             self.sampling["window_size"],
@@ -114,8 +141,8 @@ class MacroClipDataset(Dataset):
             self.sampling["max_windows"],
         )
         return {
-            "frames": torch.from_numpy(frames),
-            "windows": torch.from_numpy(windows),
+            "frames": torch.from_numpy(np.ascontiguousarray(frames)),
+            "windows": torch.from_numpy(np.ascontiguousarray(windows)),
             "label": torch.tensor(record.label_idx, dtype=torch.long),
             "clip_id": record.clip_id,
             "subject": record.subject,
@@ -163,6 +190,41 @@ def augment_views(windows: torch.Tensor, noise: float = 0.05, drop: float = 0.1)
         keep = (torch.rand(view.shape[:-1], device=view.device) > drop).float().unsqueeze(-1)
         view = view * keep + windows.mean(dim=-2, keepdim=True) * (1 - keep)
     return view
+
+
+def mixup(
+    frames: torch.Tensor, windows: torch.Tensor, labels: torch.Tensor, alpha: float
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
+    """Convex combination of two clips of the batch; returns the permuted labels too."""
+    if alpha <= 0 or frames.size(0) < 2:
+        return frames, windows, labels, 1.0
+    lam = float(np.random.beta(alpha, alpha))
+    perm = torch.randperm(frames.size(0), device=frames.device)
+    frames = lam * frames + (1 - lam) * frames[perm]
+    windows = lam * windows + (1 - lam) * windows[perm]
+    return frames, windows, labels[perm], lam
+
+
+def kfold_subject_splits(
+    subjects: list[str], num_folds: int, seed: int
+) -> list[dict[str, list[str]]]:
+    """Subject-independent k-fold: fold i holds out group i for test, group i+1 for val."""
+    unique = sorted(set(subjects))
+    rng = np.random.default_rng(seed)
+    rng.shuffle(unique)
+    groups = [[str(s) for s in group] for group in np.array_split(np.array(unique), num_folds)]
+    folds = []
+    for index in range(num_folds):
+        val_index = (index + 1) % num_folds
+        train = [s for g, group in enumerate(groups) if g not in {index, val_index} for s in group]
+        folds.append(
+            {
+                "train": sorted(train),
+                "val": sorted(groups[val_index]),
+                "test": sorted(groups[index]),
+            }
+        )
+    return folds
 
 
 def subject_split(

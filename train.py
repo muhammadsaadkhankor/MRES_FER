@@ -30,6 +30,8 @@ from mres_fer.datasets import (  # noqa: E402
     MacroClipDataset,
     MicroClipDataset,
     augment_views,
+    kfold_subject_splits,
+    mixup,
     subject_split,
     write_splits,
 )
@@ -38,16 +40,21 @@ from mres_fer.models import MicroGuidedFER  # noqa: E402
 from mres_fer.utils import count_parameters, get_logger, resolve_device, save_json, set_seed  # noqa: E402
 
 
-def build_loaders(cfg, workspace: Workspace, class_to_idx: dict[str, int], logger):
+def make_splits(cfg, workspace: Workspace, class_to_idx: dict[str, int], fold: int | None):
+    """Subject-independent split: one holdout split, or fold `fold` of a k-fold."""
     full = MacroClipDataset(workspace.macro_index, class_to_idx, cfg.sampling, train=False)
     subjects = [r.subject for r in full.records]
     if not subjects:
         raise RuntimeError(f"no macro clips in {workspace.macro_index}; run feature_extractor.py")
+    if fold is None:
+        return subject_split(
+            subjects, cfg.split["val_ratio"], cfg.split["test_ratio"], cfg.train["seed"]
+        )
+    folds = kfold_subject_splits(subjects, cfg.split["num_folds"], cfg.train["seed"])
+    return folds[fold]
 
-    splits = subject_split(
-        subjects, cfg.split["val_ratio"], cfg.split["test_ratio"], cfg.train["seed"]
-    )
-    write_splits(workspace.splits, splits)
+
+def build_loaders(cfg, workspace: Workspace, class_to_idx: dict[str, int], splits: dict, logger):
     logger.info(
         "subject-independent split -> train %d / val %d / test %d subjects",
         len(splits["train"]),
@@ -57,7 +64,12 @@ def build_loaders(cfg, workspace: Workspace, class_to_idx: dict[str, int], logge
 
     def macro_loader(name: str, train: bool) -> DataLoader:
         dataset = MacroClipDataset(
-            workspace.macro_index, class_to_idx, cfg.sampling, splits[name], train=train
+            workspace.macro_index,
+            class_to_idx,
+            cfg.sampling,
+            splits[name],
+            train=train,
+            augment=cfg.get("augment", {}) if train else None,
         )
         return DataLoader(
             dataset,
@@ -82,7 +94,7 @@ def build_loaders(cfg, workspace: Workspace, class_to_idx: dict[str, int], logge
     if micro_loader is None:
         logger.warning("no micro features found - training the macro branch only")
 
-    return macro_loader("train", True), macro_loader("val", False), micro_loader, splits
+    return macro_loader("train", True), macro_loader("val", False), micro_loader
 
 
 def evaluate(model: nn.Module, loader: DataLoader, device: torch.device) -> tuple[float, float]:
@@ -101,29 +113,30 @@ def evaluate(model: nn.Module, loader: DataLoader, device: torch.device) -> tupl
     return loss_sum / max(total, 1), correct / max(total, 1)
 
 
-def main() -> None:
-    parser = add_config_args(argparse.ArgumentParser(description=__doc__))
-    parser.add_argument("--resume", default="", help="checkpoint to resume from")
-    args = parser.parse_args()
-
-    cfg = load_config(args.config, args.set)
-    workspace = Workspace(cfg)
-    workspace.create()
-    logger = get_logger("train", workspace.logs / "train.log")
+def run_training(
+    cfg,
+    workspace: Workspace,
+    logger,
+    splits: dict[str, list[str]],
+    tag: str = "",
+    resume: str = "",
+) -> dict:
+    """Trains one model on `splits`; returns its history and best validation accuracy."""
     set_seed(cfg.train["seed"])
     device = resolve_device(cfg.train["device"])
+    suffix = f"_{tag}" if tag else ""
 
     classes = list(cfg.labels["macro_classes"])
     class_to_idx = {name: i for i, name in enumerate(classes)}
-    train_loader, val_loader, micro_loader, splits = build_loaders(
-        cfg, workspace, class_to_idx, logger
+    train_loader, val_loader, micro_loader = build_loaders(
+        cfg, workspace, class_to_idx, splits, logger
     )
 
     model = MicroGuidedFER(cfg, num_classes=len(classes)).to(device)
     logger.info("trainable parameters: %.2fM", count_parameters(model) / 1e6)
-    if args.resume:
-        model.load_state_dict(torch.load(args.resume, map_location=device)["model"])
-        logger.info("resumed from %s", args.resume)
+    if resume:
+        model.load_state_dict(torch.load(resume, map_location=device)["model"])
+        logger.info("resumed from %s", resume)
 
     optimiser = torch.optim.AdamW(
         model.parameters(), lr=cfg.train["lr"], weight_decay=cfg.train["weight_decay"]
@@ -139,8 +152,10 @@ def main() -> None:
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
     micro_iter = itertools.cycle(micro_loader) if micro_loader is not None else None
 
+    mixup_alpha = float(cfg.get("augment", {}).get("mixup_alpha", 0.0))
+    patience = int(cfg.train.get("early_stopping_patience", 0))
     history: list[dict] = []
-    best_acc = -1.0
+    best_acc, best_epoch = -1.0, 0
     for epoch in range(1, cfg.train["epochs"] + 1):
         model.train()
         started = time.time()
@@ -152,9 +167,13 @@ def main() -> None:
             windows = batch["windows"].to(device)
             labels = batch["label"].to(device)
 
+            mixed_frames, mixed_windows, labels_b, lam = mixup(frames, windows, labels, mixup_alpha)
+
             with torch.amp.autocast("cuda", enabled=use_amp):
-                output = model(frames, windows)
-                cls_loss = criterion(output["logits"], labels)
+                output = model(mixed_frames, mixed_windows)
+                cls_loss = lam * criterion(output["logits"], labels) + (1 - lam) * criterion(
+                    output["logits"], labels_b
+                )
 
                 # --- micro branch: two views of the same windows -> InfoNCE ----
                 _, proj_view = model.micro_encoder(augment_views(windows))
@@ -228,16 +247,51 @@ def main() -> None:
             "epoch": epoch,
             "val_acc": val_acc,
         }
-        torch.save(checkpoint, workspace.checkpoints / "last.pt")
+        torch.save(checkpoint, workspace.checkpoints / f"last{suffix}.pt")
         if val_acc > best_acc:
-            best_acc = val_acc
-            torch.save(checkpoint, workspace.checkpoints / "best.pt")
+            best_acc, best_epoch = val_acc, epoch
+            torch.save(checkpoint, workspace.checkpoints / f"best{suffix}.pt")
+        elif patience and epoch - best_epoch >= patience:
+            logger.info("early stop: no validation improvement for %d epochs", patience)
+            break
 
-    save_json(workspace.results / "training_history.json", history)
+    save_json(workspace.results / f"training_history{suffix}.json", history)
     logger.info(
-        "done. best val acc %.3f | checkpoints: %s",
+        "done. best val acc %.3f (epoch %d) | checkpoints: %s",
         best_acc,
+        best_epoch,
         workspace.checkpoints,
+    )
+    return {"history": history, "best_val_acc": best_acc, "best_epoch": best_epoch}
+
+
+def main() -> None:
+    parser = add_config_args(argparse.ArgumentParser(description=__doc__))
+    parser.add_argument("--resume", default="", help="checkpoint to resume from")
+    parser.add_argument(
+        "--fold",
+        type=int,
+        default=None,
+        help="train fold i of split.num_folds instead of the single holdout split",
+    )
+    args = parser.parse_args()
+
+    cfg = load_config(args.config, args.set)
+    workspace = Workspace(cfg)
+    workspace.create()
+    logger = get_logger("train", workspace.logs / "train.log")
+
+    classes = list(cfg.labels["macro_classes"])
+    class_to_idx = {name: i for i, name in enumerate(classes)}
+    splits = make_splits(cfg, workspace, class_to_idx, args.fold)
+    write_splits(workspace.splits, splits)
+    run_training(
+        cfg,
+        workspace,
+        logger,
+        splits,
+        tag="" if args.fold is None else f"fold{args.fold}",
+        resume=args.resume,
     )
 
 

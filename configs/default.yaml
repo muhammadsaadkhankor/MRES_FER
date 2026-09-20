@@ -53,9 +53,9 @@ model:
   proj_dim: 128                        # contrastive projection head output
   micro_layers: 2
   micro_heads: 4
-  macro_layers: 4
+  macro_layers: 2
   macro_heads: 8
-  dropout: 0.1
+  dropout: 0.3                         # high on purpose: only 120 training clips
   motion_magnification: 2.0            # scales frame-to-frame differences inside the micro encoder
   use_micro_tokens: true               # feed latent micro-clues into the macro encoder
 
@@ -64,16 +64,25 @@ loss:
   w_contrastive: 0.5                   # InfoNCE over window views (macro windows + micro clips)
   w_temporal: 0.1                      # temporal-consistency regulariser on consecutive clues
   temperature: 0.07
-  label_smoothing: 0.05
+  label_smoothing: 0.1
+
+# Feature-level augmentation of macro clips (train split only). MMEW is tiny, so this
+# is the main defence against the model memorising the 120 training clips.
+augment:
+  temporal_crop: 0.3                   # keep a random 70-100% sub-segment of the clip
+  feature_noise: 0.05                  # gaussian noise added to the ViT features
+  frame_dropout: 0.1                   # fraction of frames replaced by the clip mean
+  mixup_alpha: 0.4                     # 0 disables mixup
 
 train:
-  epochs: 30
+  epochs: 60
   batch_size: 8
   micro_batch_size: 8                  # micro clips mixed into every step for the contrastive loss
-  lr: 0.0003
-  weight_decay: 0.01
-  warmup_epochs: 2
+  lr: 0.0002
+  weight_decay: 0.05
+  warmup_epochs: 3
   grad_clip: 1.0
+  early_stopping_patience: 15          # 0 disables it
   num_workers: 4
   device: cuda
   seed: 42
@@ -83,3 +92,4 @@ split:
   mode: subject                        # subject | random  (subject = subject-independent)
   val_ratio: 0.15
   test_ratio: 0.20
+  num_folds: 5                         # used by cross_validate.py / train.py --fold
