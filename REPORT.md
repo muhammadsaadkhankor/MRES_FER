@@ -255,5 +255,12 @@ shapes, splits, checkpointing and IO are correct end to end.
    0.388 ± 0.043 macro-F1 over the same five subject-independent folds, ~12 points
    above every frozen-feature variant. These are now the defaults in
    `configs/default.yaml`.
-7. **Backbone** — any `timm` ViT name also works (`extractor.backbone`), e.g. a
+7. **The micro branch reverses sign under fine-tuning** — same five folds without
+   it (`model.use_micro_tokens=false loss.w_contrastive=0 loss.w_temporal=0`):
+   0.483 ± 0.042 accuracy / 0.465 macro-F1, better on every individual fold. With
+   frozen features the micro branch helped (+0.02); once the backbone is trainable
+   and only 108 clips are available, the auxiliary losses appear to compete with
+   the classification objective. Separating token conditioning from the auxiliary
+   losses (tokens on, both weights 0) is the next diagnostic.
+8. **Backbone** — any `timm` ViT name also works (`extractor.backbone`), e.g. a
    face-pretrained ViT would likely beat ImageNet weights.
